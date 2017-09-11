@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import CoreData
 
 class ViewController: UIViewController {
 	
@@ -14,7 +15,7 @@ class ViewController: UIViewController {
 	@IBOutlet weak var image: UIImageView!
 	@IBOutlet weak var tableView: UITableView!
 	
-	var people = ["a", "b", "c"]
+	var people = [NSManagedObject]()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -27,6 +28,21 @@ class ViewController: UIViewController {
 		
 		tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
     }
+	
+	override func viewWillAppear(_ animated: Bool) {
+		super.viewWillAppear(true)
+		
+		guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else {return}
+		let managedContext = appDelegate.persistentContainer.viewContext
+		let fetchRequest = NSFetchRequest<NSManagedObject>(entityName: "Person")
+		
+		do {
+			people = try managedContext.fetch(fetchRequest)
+		} catch let error as NSError {
+			print("Could Not Fetch \(error), \(error.userInfo)")
+		}
+		
+	}
 
 	@IBAction func addPerson(_ sender: UIBarButtonItem) {
 		addPersonAlertController()
@@ -50,8 +66,20 @@ class ViewController: UIViewController {
 				let friendName = textField.text else {
 					return
 			}
-			self.people.insert(friendName, at: 0)
-			self.tableView.reloadData()
+			
+			guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else {return}
+			let managedContex = appDelegate.persistentContainer.viewContext
+			let entity = NSEntityDescription.entity(forEntityName: "Person", in: managedContex)
+			let managedObject = NSManagedObject(entity: entity!, insertInto: managedContex)
+			managedObject.setValue(friendName, forKey: "name")
+
+			do {
+				try managedContex.save()
+				self.people.insert(managedObject, at: 0)
+				self.tableView.reloadData()
+			} catch let error as NSError {
+				print("Could Not Save \(error), \(error.userInfo)")
+			}
 		}
 		let cancelAction = UIAlertAction(title: "Cancel", style: .cancel) { (action) in
 			return
@@ -73,11 +101,12 @@ extension ViewController: UITableViewDataSource {
 	}
 	
 	func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+		let person = people[indexPath.row]
 		let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
 		cell.backgroundColor = UIColor.black
 		cell.textLabel?.font = UIFont.preferredFont(forTextStyle: .headline)
 		cell.textLabel?.textColor = UIColor.orange.withAlphaComponent(0.75)
-		cell.textLabel?.text = people[indexPath.row]
+		cell.textLabel?.text = person.value(forKey: "name") as? String
 		cell.textLabel?.textAlignment = .center
 		cell.separatorInset.left = 5
 		cell.separatorInset.right = 5
@@ -89,9 +118,31 @@ extension ViewController: UITableViewDataSource {
 	}
 	
 	func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCellEditingStyle, forRowAt indexPath: IndexPath) {
-		let removedRow = indexPath.row
-		people.remove(at: removedRow)
+		let cell = tableView.cellForRow(at: indexPath)
+		let nameToRemove = cell?.textLabel?.text
+		
+		guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else {return}
+		let managedContex = appDelegate.persistentContainer.viewContext
+		let fetchRequest = NSFetchRequest<NSManagedObject>(entityName: "Person")
+		fetchRequest.predicate = NSPredicate(format: "name == %@", nameToRemove!)
+		
+		do {
+			let result = try managedContex.fetch(fetchRequest)
+			if result.count > 0 {
+				managedContex.delete(result.first!)
+			}
+		} catch let error as NSError {
+			print("Could not remove \(error), \(error.userInfo)")
+		}
+		
+		do {
+			try managedContex.save()
+		} catch let error as NSError {
+			print("Could Not Save \(error), \(error.userInfo)")
+		}
+		people.remove(at: indexPath.row)
 		tableView.deleteRows(at: [indexPath], with: .automatic)
+
 	}
 	
 	
